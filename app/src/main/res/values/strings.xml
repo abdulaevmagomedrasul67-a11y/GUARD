@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">Ali-Guard</string>
+    <string name="nav_home">Главная</string>
+    <string name="nav_map">Карта</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="warp_ai_title">WARP AI</string>
+    <string name="warp_ai_subtitle">Gemini, Google AI Studio и облачные сервисы Google</string>
+    <string name="warp_other_title">WARP Остальное</string>
+    <string name="warp_other_subtitle">WhatsApp, Telegram, YouTube и замедленные подсети</string>
+    <string name="status_protected">Защищено</string>
+    <string name="status_disconnected">Отключено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_rotating_ip">Смена региона IP…</string>
+    <string name="btn_generate_config">Сгенерировать WARP .conf</string>
+    <string name="btn_regenerate_config">Пересоздать ключи WARP</string>
+    <string name="btn_refresh_ip">Обновить IP</string>
+    <string name="btn_view_config">Показать .conf</string>
+    <string name="btn_copy_config">Скопировать .conf</string>
+    <string name="map_connected_to">Подключено к: %1$s</string>
+    <string name="map_connection_protected">Ваше подключение защищено</string>
+    <string name="map_connection_unprotected">Туннель отключён — прямой маршрут</string>
+    <string name="settings_theme_title">Тема оформления</string>
+    <string name="settings_theme_dark">Тёмное стекло (Dark Liquid)</string>
+    <string name="settings_theme_light">Светлое стекло (Light Frost)</string>
+    <string name="settings_refresh_ip_title">Обновить IP</string>
+    <string name="settings_refresh_ip_desc">Переподключение WARP для смены региона и обхода блокировки AI</string>
+    <string name="settings_about_title">О приложении</string>
+    <string name="settings_developer_name">Разработчик: Абдулаев Али</string>
+    <string name="settings_about_subtitle">Нативный клиент и генератор Cloudflare WARP (IPv4 Split-Tunnel)</string>
+</resources>

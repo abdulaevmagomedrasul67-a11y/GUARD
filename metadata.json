@@ -1,0 +1,6 @@
+{
+  "name": "Ali-Guard",
+  "description": "Нативный генератор и клиент Cloudflare WARP с раздельным туннелированием для AI и сервисов в стиле Liquid Glass.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
