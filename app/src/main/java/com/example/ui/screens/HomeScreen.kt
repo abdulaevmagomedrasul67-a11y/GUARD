@@ -1,12 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -44,11 +37,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -88,7 +79,7 @@ fun HomeScreen(
                 .widthIn(max = 560.dp)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Minimalist Brutalist Header
             Row(
@@ -112,17 +103,16 @@ fun HomeScreen(
                     )
                 }
 
-                // IPv4-Only Badge
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
+                        .clip(RoundedCornerShape(percent = 50))
                         .background(glassColors.accentCyan.copy(alpha = 0.14f))
                         .border(
                             width = 1.dp,
                             color = glassColors.accentCyan.copy(alpha = 0.45f),
-                            shape = RoundedCornerShape(50)
+                            shape = RoundedCornerShape(percent = 50)
                         )
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = "IPv4 ONLY",
@@ -132,7 +122,7 @@ fun HomeScreen(
                 }
             }
 
-            // Big Liquid Glass Button 1: «WARP AI»
+            // Big Rounded Glass Button 1: «WARP AI»
             LiquidModeToggleButton(
                 title = stringResource(R.string.warp_ai_title),
                 subtitle = stringResource(R.string.warp_ai_subtitle),
@@ -144,7 +134,7 @@ fun HomeScreen(
                 onToggle = { onToggleWarpAi(!uiState.warpAiEnabled) }
             )
 
-            // Big Liquid Glass Button 2: «WARP Остальное»
+            // Big Rounded Glass Button 2: «WARP Остальное»
             LiquidModeToggleButton(
                 title = stringResource(R.string.warp_other_title),
                 subtitle = stringResource(R.string.warp_other_subtitle),
@@ -156,7 +146,7 @@ fun HomeScreen(
                 onToggle = { onToggleWarpOther(!uiState.warpOtherEnabled) }
             )
 
-            // Connection Status Glass Pill (Под ними — статус подключения: «Защищено» / «Отключено»)
+            // Connection Status Glass Pill («Защищено» / «Отключено»)
             ConnectionStatusGlassBanner(
                 isProtected = isAnyModeActive,
                 isConnecting = uiState.tunnelStatus.isConnecting || uiState.isGeneratingConfig,
@@ -167,7 +157,7 @@ fun HomeScreen(
                 onRefreshIp = onRefreshIp
             )
 
-            // Native WARP Curve25519 Generator Bar
+            // Native WARP Curve25519 Generator Bar (Works in Russia)
             WarpGeneratorGlassPanel(
                 hasProfile = uiState.profile != null,
                 isGenerating = uiState.isGeneratingConfig,
@@ -177,14 +167,9 @@ fun HomeScreen(
                 onViewConfClick = { onShowConfigDialog(true) }
             )
 
-            // Banner toast feedback if present
-            AnimatedVisibility(
-                visible = !uiState.bannerMessage.isNullOrBlank(),
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
+            if (!uiState.bannerMessage.isNullOrBlank()) {
                 LiquidGlassCard(
-                    cornerRadius = 18.dp,
+                    cornerRadius = 24.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -201,7 +186,7 @@ fun HomeScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = uiState.bannerMessage.orEmpty(),
+                            text = uiState.bannerMessage,
                             style = MaterialTheme.typography.bodyMedium,
                             color = glassColors.textPrimary
                         )
@@ -209,7 +194,7 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(88.dp))
+            Spacer(modifier = Modifier.height(104.dp))
         }
     }
 
@@ -233,25 +218,19 @@ private fun LiquidModeToggleButton(
     onToggle: () -> Unit
 ) {
     val glassColors = LocalLiquidGlassColors.current
-    val scale by animateFloatAsState(
-        targetValue = if (isEnabled) 1.0f else 0.985f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "card_scale"
-    )
-
-    val iconBgColor by animateColorAsState(
-        targetValue = if (isEnabled) accentColor.copy(alpha = 0.25f) else glassColors.textSecondary.copy(alpha = 0.12f),
-        label = "icon_bg"
-    )
+    val iconBgColor = if (isEnabled) {
+        accentColor.copy(alpha = 0.24f)
+    } else {
+        glassColors.textSecondary.copy(alpha = 0.12f)
+    }
 
     LiquidGlassCard(
         isActive = isEnabled,
         activeAccentColor = accentColor,
-        cornerRadius = 30.dp,
+        cornerRadius = 34.dp,
         onClick = onToggle,
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
             .testTag(testTag)
     ) {
         Column(
@@ -273,12 +252,12 @@ private fun LiquidModeToggleButton(
                     Box(
                         modifier = Modifier
                             .size(52.dp)
-                            .clip(RoundedCornerShape(18.dp))
+                            .clip(RoundedCornerShape(20.dp))
                             .background(iconBgColor)
                             .border(
                                 width = 1.dp,
                                 color = if (isEnabled) accentColor.copy(alpha = 0.7f) else glassColors.specularHighlightSubtle,
-                                shape = RoundedCornerShape(18.dp)
+                                shape = RoundedCornerShape(20.dp)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
@@ -324,12 +303,12 @@ private fun LiquidModeToggleButton(
 
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(percent = 50))
                     .background(
-                        if (glassColors.isDark) Color.Black.copy(alpha = 0.25f)
-                        else Color.White.copy(alpha = 0.5f)
+                        if (glassColors.isDark) Color.Black.copy(alpha = 0.28f)
+                        else Color.White.copy(alpha = 0.6f)
                     )
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = badgeText,
@@ -354,10 +333,7 @@ private fun ConnectionStatusGlassBanner(
     onRefreshIp: () -> Unit
 ) {
     val glassColors = LocalLiquidGlassColors.current
-    val statusColor by animateColorAsState(
-        targetValue = if (isProtected) glassColors.statusProtected else glassColors.textSecondary,
-        label = "status_color"
-    )
+    val statusColor = if (isProtected) glassColors.statusProtected else glassColors.textSecondary
 
     val statusTitle = when {
         isRotatingIp -> stringResource(R.string.status_rotating_ip)
@@ -369,7 +345,7 @@ private fun ConnectionStatusGlassBanner(
     LiquidGlassCard(
         isActive = isProtected,
         activeAccentColor = glassColors.statusProtected,
-        cornerRadius = 26.dp,
+        cornerRadius = 30.dp,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("connection_status_card")
@@ -387,7 +363,8 @@ private fun ConnectionStatusGlassBanner(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Box(
                         modifier = Modifier
@@ -431,14 +408,13 @@ private fun ConnectionStatusGlassBanner(
                     }
                 }
 
-                // Quick «Обновить IP» button right inside the status bar
                 LiquidGlassCard(
-                    cornerRadius = 16.dp,
+                    cornerRadius = 22.dp,
                     onClick = onRefreshIp,
                     modifier = Modifier.testTag("home_refresh_ip_button")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -457,7 +433,6 @@ private fun ConnectionStatusGlassBanner(
                 }
             }
 
-            // Reserved bytes & protocol telemetry row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -490,7 +465,7 @@ private fun WarpGeneratorGlassPanel(
     val glassColors = LocalLiquidGlassColors.current
 
     LiquidGlassCard(
-        cornerRadius = 24.dp,
+        cornerRadius = 28.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -522,9 +497,9 @@ private fun WarpGeneratorGlassPanel(
                         )
                         Text(
                             text = if (hasProfile) {
-                                "Ключ зарегистрирован • IP: $addressV4/32 • ID: ${deviceId.take(8)}"
+                                "Ключ готов (RU Обход) • IP: $addressV4/32 • ID: ${deviceId.take(8)}"
                             } else {
-                                "Локальная генерация ключей + api.cloudflareclient.com"
+                                "Локальная генерация ключей + обход блокировок РФ"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = glassColors.textSecondary
@@ -540,7 +515,7 @@ private fun WarpGeneratorGlassPanel(
                 LiquidGlassCard(
                     isActive = true,
                     activeAccentColor = glassColors.accentCyan,
-                    cornerRadius = 16.dp,
+                    cornerRadius = 22.dp,
                     onClick = onGenerateClick,
                     modifier = Modifier
                         .weight(1f)
@@ -575,7 +550,7 @@ private fun WarpGeneratorGlassPanel(
 
                 if (hasProfile) {
                     LiquidGlassCard(
-                        cornerRadius = 16.dp,
+                        cornerRadius = 22.dp,
                         onClick = onViewConfClick,
                         modifier = Modifier.testTag("view_warp_conf_button")
                     ) {
@@ -631,7 +606,7 @@ private fun WireGuardConfDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(
                             if (glassColors.isDark) Color.Black.copy(alpha = 0.45f)
                             else Color(0xFFE2E8F0)

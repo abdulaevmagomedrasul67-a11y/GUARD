@@ -1,11 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,17 +54,6 @@ fun MapScreen(
     val geo = uiState.geoIpInfo
     val scrollState = rememberScrollState()
 
-    val infiniteTransition = rememberInfiniteTransition(label = "radar_pulse")
-    val pulseRadius by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulse_radius"
-    )
-
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
@@ -85,7 +67,6 @@ fun MapScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -105,7 +86,7 @@ fun MapScreen(
                 }
 
                 LiquidGlassCard(
-                    cornerRadius = 16.dp,
+                    cornerRadius = 24.dp,
                     onClick = onRefreshGeoIp,
                     modifier = Modifier.testTag("map_refresh_geo_button")
                 ) {
@@ -131,14 +112,14 @@ fun MapScreen(
                 }
             }
 
-            // Interactive Liquid Glass Map / Radar Visualization Card
+            // Static zero-lag radar card
             LiquidGlassCard(
                 isActive = isProtected,
                 activeAccentColor = glassColors.accentCyan,
-                cornerRadius = 32.dp,
+                cornerRadius = 36.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp)
+                    .height(240.dp)
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -151,7 +132,6 @@ fun MapScreen(
                         val maxR = size.minDimension * 0.44f
                         val gridColor = glassColors.accentCyan.copy(alpha = 0.16f)
 
-                        // Latitude / Longitude stylized graticule lines
                         val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                         for (i in 1..3) {
                             drawCircle(
@@ -176,23 +156,21 @@ fun MapScreen(
                             pathEffect = dashEffect
                         )
 
-                        // Animated WARP beacon pulse
                         val beaconColor = if (isProtected) glassColors.statusProtected else glassColors.accentCyan
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    beaconColor.copy(alpha = (1f - pulseRadius) * 0.55f),
+                                    beaconColor.copy(alpha = 0.28f),
                                     beaconColor.copy(alpha = 0f)
                                 ),
                                 center = center,
-                                radius = (maxR * pulseRadius).coerceAtLeast(8f)
+                                radius = maxR * 0.75f
                             ),
-                            radius = (maxR * pulseRadius).coerceAtLeast(8f),
+                            radius = maxR * 0.75f,
                             center = center
                         )
                     }
 
-                    // Center Navigation Arrow / Beacon Icon
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -228,7 +206,7 @@ fun MapScreen(
             LiquidGlassCard(
                 isActive = isProtected,
                 activeAccentColor = glassColors.statusProtected,
-                cornerRadius = 28.dp,
+                cornerRadius = 32.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("map_location_card")
@@ -268,7 +246,6 @@ fun MapScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Telemetry details from ipwho.is
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -302,9 +279,8 @@ fun MapScreen(
                         }
                     }
 
-                    // Action to rotate WARP IP directly from the Map tab if user wants another region
                     LiquidGlassCard(
-                        cornerRadius = 18.dp,
+                        cornerRadius = 24.dp,
                         onClick = onRotateIp,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -335,7 +311,7 @@ fun MapScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(88.dp))
+            Spacer(modifier = Modifier.height(104.dp))
         }
     }
 }

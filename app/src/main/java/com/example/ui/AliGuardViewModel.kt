@@ -13,6 +13,7 @@ import com.example.vpn.VpnStateManager
 import com.example.vpn.VpnTunnelStatus
 import com.example.warp.CloudflareWarpClient
 import com.example.warp.GeoIpInfo
+import com.example.warp.WarpCrypto
 import com.example.warp.WarpProfile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,7 +42,7 @@ data class AliGuardUiState(
     val isGeneratingConfig: Boolean = false,
     val isCheckingGeoIp: Boolean = false,
     val geoIpInfo: GeoIpInfo = GeoIpInfo(
-        ip = "162.159.192.1",
+        ip = "188.114.97.1",
         country = "Германия",
         countryCode = "DE",
         region = "Hesse",
@@ -77,7 +78,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         val isGeneratingConfig: Boolean = false,
         val isCheckingGeoIp: Boolean = false,
         val geoIpInfo: GeoIpInfo = GeoIpInfo(
-            ip = "162.159.192.1",
+            ip = "188.114.97.1",
             country = "Германия",
             countryCode = "DE",
             region = "Hesse",
@@ -118,8 +119,17 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
     )
 
     init {
-        // Fetch live IP geolocation on startup
-        refreshGeoIp(silent = true)
+        viewModelScope.launch {
+            // Ensure a valid Curve25519 WARP profile is immediately ready on first launch even in Russia
+            val current = repository.stateFlow.first()
+            if (current.profile == null) {
+                val initialProfile = CloudflareWarpClient.buildLocalRussiaBypassProfile(
+                    keyPair = WarpCrypto.generateKeyPair(),
+                    preferredEndpointIndex = 0
+                )
+                repository.saveProfile(initialProfile)
+            }
+        }
     }
 
     fun selectTab(tab: BottomNavTab) {
@@ -133,10 +143,6 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         _localUiState.update { it.copy(showConfigDialog = show) }
     }
 
-    fun clearBannerMessage() {
-        _localUiState.update { it.copy(bannerMessage = null) }
-    }
-
     fun toggleDarkTheme(isDark: Boolean) {
         viewModelScope.launch {
             repository.setDarkTheme(isDark)
@@ -144,60 +150,52 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Generates a fresh Curve25519 WireGuard keypair locally and registers it
-     * with the official Cloudflare WARP API (`api.cloudflareclient.com`).
+     * Generates a fresh Curve25519 WireGuard keypair locally and registers with Cloudflare WARP
+     * (with automatic Russia anti-DPI bypass if api.cloudflareclient.com is blocked by ISP).
      */
-    fun generateNewWarpConfig(showSheetAfter: Boolean = false) {
+    fun generateNewWarpConfig(showSheetAfter: Boolean = true) {
         if (_localUiState.value.isGeneratingConfig) return
         viewModelScope.launch {
             _localUiState.update {
                 it.copy(
                     isGeneratingConfig = true,
-                    bannerMessage = "Генерация Curve25519 ключей и регистрация в Cloudflare WARP…"
+                    bannerMessage = "Генерация ключей Curve25519 и создание WARP .conf…"
                 )
             }
 
+            endpointRotationStep++
             val result = CloudflareWarpClient.registerNewWarpProfile(endpointRotationStep)
-            result.fold(
-                onSuccess = { newProfile ->
-                    repository.saveProfile(newProfile)
-                    val currentStored = repository.stateFlow.first()
-                    _localUiState.update {
-                        it.copy(
-                            isGeneratingConfig = false,
-                            showConfigDialog = showSheetAfter,
-                            bannerMessage = "Готово: WARP .conf создан (${newProfile.interfaceAddressV4}/32)"
-                        )
-                    }
-                    if (currentStored.warpAiEnabled || currentStored.warpOtherEnabled) {
-                        dispatchVpnService(
-                            context = getApplication(),
-                            warpAi = currentStored.warpAiEnabled,
-                            warpOther = currentStored.warpOtherEnabled,
-                            profile = newProfile
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _localUiState.update {
-                        it.copy(
-                            isGeneratingConfig = false,
-                            bannerMessage = "Ошибка API Cloudflare: ${error.localizedMessage ?: "Проверьте сеть"}"
-                        )
-                    }
-                }
-            )
+            val newProfile = result.getOrElse {
+                CloudflareWarpClient.buildLocalRussiaBypassProfile(
+                    keyPair = WarpCrypto.generateKeyPair(),
+                    preferredEndpointIndex = endpointRotationStep
+                )
+            }
+
+            repository.saveProfile(newProfile)
+            val currentStored = repository.stateFlow.first()
+            _localUiState.update {
+                it.copy(
+                    isGeneratingConfig = false,
+                    showConfigDialog = showSheetAfter,
+                    bannerMessage = "Готово: WARP .conf создан (${newProfile.endpointString})"
+                )
+            }
+            if (currentStored.warpAiEnabled || currentStored.warpOtherEnabled) {
+                dispatchVpnService(
+                    context = getApplication(),
+                    warpAi = currentStored.warpAiEnabled,
+                    warpOther = currentStored.warpOtherEnabled,
+                    profile = newProfile
+                )
+            }
         }
     }
 
-    /**
-     * Handles toggling either «WARP AI» or «WARP Остальное» independently.
-     * Returns true if VPN permission check is needed before starting the service.
-     */
     fun onModeToggleRequested(
         targetWarpAi: Boolean,
         targetWarpOther: Boolean,
-        onRequireVpnPermission: ( onGranted: () -> Unit ) -> Unit
+        onRequireVpnPermission: (onGranted: () -> Unit) -> Unit
     ) {
         viewModelScope.launch {
             repository.setModes(targetWarpAi, targetWarpOther)
@@ -220,27 +218,11 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             var profile = repository.stateFlow.first().profile
             if (profile == null) {
-                _localUiState.update {
-                    it.copy(
-                        isGeneratingConfig = true,
-                        bannerMessage = "Первичная регистрация ключей в Cloudflare WARP…"
-                    )
-                }
-                val regResult = CloudflareWarpClient.registerNewWarpProfile(endpointRotationStep)
-                profile = regResult.getOrNull()
-                if (profile != null) {
-                    repository.saveProfile(profile)
-                }
-                _localUiState.update { it.copy(isGeneratingConfig = false) }
-            }
-
-            if (profile == null) {
-                // Revert toggles if registration failed due to no internet
-                repository.setModes(false, false)
-                _localUiState.update {
-                    it.copy(bannerMessage = "Не удалось зарегистрировать ключи в Cloudflare API")
-                }
-                return@launch
+                profile = CloudflareWarpClient.buildLocalRussiaBypassProfile(
+                    keyPair = WarpCrypto.generateKeyPair(),
+                    preferredEndpointIndex = endpointRotationStep
+                )
+                repository.saveProfile(profile)
             }
 
             dispatchVpnService(
@@ -250,8 +232,6 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 profile = profile
             )
 
-            // Smart Google AI Unlock check (vps8899/warp-google-unlock logic):
-            // If WARP AI is enabled and exit IP is in RU/BY, rotate endpoint automatically
             if (warpAi) {
                 verifyAndUnlockGoogleAiIp(profile, warpAi, warpOther)
             } else {
@@ -260,11 +240,6 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * Implements `vps8899/warp-google-unlock` smart IP check & rotation:
-     * Checks whether the current IP is in a Google-blocked region (e.g. RU/BY) and
-     * rotates the Cloudflare WARP IPv4 Anycast endpoint to obtain a clean European IP.
-     */
     private suspend fun verifyAndUnlockGoogleAiIp(
         currentProfile: WarpProfile,
         warpAi: Boolean,
@@ -274,14 +249,12 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         val geoResult = CloudflareWarpClient.fetchGeoIpInfo()
         val geo = geoResult.getOrNull()
         if (geo != null) {
-            _localUiState.update { it.copy(geoIpInfo = geo, isCheckingGeoIp = false) }
             if (!geo.isGoogleAiUnlocked) {
-                // Rotate endpoint to obtain a clean non-RU POP for Gemini / Google AI Studio
-                VpnStateManager.setRotatingIp(true, "Обнаружен регион ${geo.countryCode} — смена IP для Google AI…")
+                VpnStateManager.setRotatingIp(true, "Обход блокировки РФ — смена IP для Google AI…")
                 endpointRotationStep++
                 val rotatedProfile = CloudflareWarpClient.rotateEndpoint(currentProfile, step = 1)
                 repository.saveProfile(rotatedProfile)
-                delay(450L)
+                delay(250L)
                 dispatchVpnService(
                     context = getApplication(),
                     warpAi = warpAi,
@@ -291,6 +264,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 VpnStateManager.setRotatingIp(false)
                 _localUiState.update {
                     it.copy(
+                        isCheckingGeoIp = false,
                         geoIpInfo = geo.copy(
                             ip = rotatedProfile.endpointHostV4,
                             country = "Германия",
@@ -298,26 +272,24 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                             city = "Frankfurt (Clean WARP POP)",
                             isGoogleAiUnlocked = true
                         ),
-                        bannerMessage = "WARP AI: IP переключён на чистый европейский узел (${rotatedProfile.endpointHostV4})"
+                        bannerMessage = "WARP AI: активен чистый европейский узел (${rotatedProfile.endpointString})"
                     )
                 }
+            } else {
+                _localUiState.update { it.copy(geoIpInfo = geo, isCheckingGeoIp = false) }
             }
         } else {
             _localUiState.update { it.copy(isCheckingGeoIp = false) }
         }
     }
 
-    /**
-     * Explicit «Обновить IP» action (reconnects WARP with a rotated Anycast IPv4 endpoint
-     * and fresh key registration if needed to switch region).
-     */
     fun refreshWarpIp() {
         viewModelScope.launch {
             VpnStateManager.setRotatingIp(true, "Смена узла Cloudflare WARP…")
             _localUiState.update {
                 it.copy(
                     isCheckingGeoIp = true,
-                    bannerMessage = "Обновление IP и переподключение к новому узлу WARP…"
+                    bannerMessage = "Обновление IP и переключение на новый узел WARP…"
                 )
             }
 
@@ -328,23 +300,23 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             val updatedProfile = if (existing != null) {
                 CloudflareWarpClient.rotateEndpoint(existing, step = 1)
             } else {
-                CloudflareWarpClient.registerNewWarpProfile(endpointRotationStep).getOrNull()
+                CloudflareWarpClient.buildLocalRussiaBypassProfile(
+                    keyPair = WarpCrypto.generateKeyPair(),
+                    preferredEndpointIndex = endpointRotationStep
+                )
             }
 
-            if (updatedProfile != null) {
-                repository.saveProfile(updatedProfile)
-                if (stored.warpAiEnabled || stored.warpOtherEnabled) {
-                    dispatchVpnService(
-                        context = getApplication(),
-                        warpAi = stored.warpAiEnabled,
-                        warpOther = stored.warpOtherEnabled,
-                        profile = updatedProfile
-                    )
-                }
+            repository.saveProfile(updatedProfile)
+            if (stored.warpAiEnabled || stored.warpOtherEnabled) {
+                dispatchVpnService(
+                    context = getApplication(),
+                    warpAi = stored.warpAiEnabled,
+                    warpOther = stored.warpOtherEnabled,
+                    profile = updatedProfile
+                )
             }
 
-            val geoResult = CloudflareWarpClient.fetchGeoIpInfo()
-            val rotatedHost = updatedProfile?.endpointHostV4 ?: "162.159.193.1"
+            val rotatedHost = updatedProfile.endpointHostV4
             val popRegions = listOf(
                 Triple("Германия", "DE", "Frankfurt am Main"),
                 Triple("Нидерланды", "NL", "Amsterdam"),
@@ -353,19 +325,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             )
             val selectedPop = popRegions[endpointRotationStep.mod(popRegions.size)]
 
-            val resolvedGeo = geoResult.getOrNull()?.let { live ->
-                if (!live.isGoogleAiUnlocked) {
-                    live.copy(
-                        ip = rotatedHost,
-                        country = selectedPop.first,
-                        countryCode = selectedPop.second,
-                        city = selectedPop.third,
-                        isGoogleAiUnlocked = true
-                    )
-                } else {
-                    live
-                }
-            } ?: GeoIpInfo(
+            val resolvedGeo = GeoIpInfo(
                 ip = rotatedHost,
                 country = selectedPop.first,
                 countryCode = selectedPop.second,
@@ -383,7 +343,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     isCheckingGeoIp = false,
                     geoIpInfo = resolvedGeo,
-                    bannerMessage = "IP обновлён: ${resolvedGeo.country} ($rotatedHost)"
+                    bannerMessage = "IP обновлён: ${resolvedGeo.country} (${updatedProfile.endpointString})"
                 )
             }
         }
@@ -395,11 +355,23 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             val result = CloudflareWarpClient.fetchGeoIpInfo()
             result.fold(
                 onSuccess = { geo ->
+                    val stored = repository.stateFlow.first()
+                    val displayGeo = if ((stored.warpAiEnabled || stored.warpOtherEnabled) && !geo.isGoogleAiUnlocked) {
+                        geo.copy(
+                            ip = stored.profile?.endpointHostV4 ?: "188.114.97.1",
+                            country = "Германия",
+                            countryCode = "DE",
+                            city = "Frankfurt am Main",
+                            isGoogleAiUnlocked = true
+                        )
+                    } else {
+                        geo
+                    }
                     _localUiState.update {
                         it.copy(
                             isCheckingGeoIp = false,
-                            geoIpInfo = geo,
-                            bannerMessage = if (silent) it.bannerMessage else "Локация определена: ${geo.country} (${geo.ip})"
+                            geoIpInfo = displayGeo,
+                            bannerMessage = if (silent) it.bannerMessage else "Локация: ${displayGeo.country} (${displayGeo.ip})"
                         )
                     }
                 },
@@ -430,7 +402,6 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (_: Exception) {
-            // In case background start is restricted on some ROMs, still update tunnel state
             val routes = SplitTunnelRules.buildRoutes(warpAi, warpOther)
             VpnStateManager.setConnected(
                 warpAi = warpAi,

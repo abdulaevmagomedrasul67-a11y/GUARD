@@ -84,7 +84,7 @@ fun SettingsScreen(
 
             // 1. Переключатель тёмной/светлой темы
             LiquidGlassCard(
-                cornerRadius = 26.dp,
+                cornerRadius = 32.dp,
                 onClick = { onToggleTheme(!uiState.isDarkTheme) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -152,7 +152,7 @@ fun SettingsScreen(
             LiquidGlassCard(
                 isActive = true,
                 activeAccentColor = glassColors.accentCyan,
-                cornerRadius = 26.dp,
+                cornerRadius = 32.dp,
                 onClick = onRefreshIp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -211,7 +211,7 @@ fun SettingsScreen(
 
             // 3. Пункт «О приложении»: указывает разработчика — Абдулаев Али
             LiquidGlassCard(
-                cornerRadius = 26.dp,
+                cornerRadius = 32.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settings_about_card")

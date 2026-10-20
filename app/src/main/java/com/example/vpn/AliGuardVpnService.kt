@@ -65,8 +65,8 @@ class AliGuardVpnService : VpnService() {
                 val privateKey = intent.getStringExtra(EXTRA_PRIVATE_KEY).orEmpty()
                 val peerPublicKey = intent.getStringExtra(EXTRA_PEER_PUBLIC_KEY).orEmpty()
                 val addressV4 = intent.getStringExtra(EXTRA_ADDRESS_V4) ?: "172.16.0.2"
-                val endpointHost = intent.getStringExtra(EXTRA_ENDPOINT_HOST) ?: "162.159.192.1"
-                val endpointPort = intent.getIntExtra(EXTRA_ENDPOINT_PORT, 2408)
+                val endpointHost = intent.getStringExtra(EXTRA_ENDPOINT_HOST) ?: "188.114.97.1"
+                val endpointPort = intent.getIntExtra(EXTRA_ENDPOINT_PORT, 500)
                 val reservedArray = intent.getIntArrayExtra(EXTRA_RESERVED_BYTES) ?: intArrayOf(0, 0, 0)
 
                 startForeground(NOTIFICATION_ID, buildForegroundNotification(warpAi, warpOther, endpointHost))
@@ -100,18 +100,10 @@ class AliGuardVpnService : VpnService() {
         keepaliveJob?.cancel()
 
         tunnelJob = serviceScope.launch {
-            VpnStateManager.setConnecting(
-                warpAi = warpAi,
-                warpOther = warpOther,
-                detail = "Настройка IPv4 маршрутов и проверка WireGuard…"
-            )
-
-            // Resolve live IPv4 edge addresses for target AI / Other domains
-            val dynamicRoutes = SplitTunnelRules.resolveDynamicDomainRoutes(warpAi, warpOther)
+            // Instant IPv4 CIDR route assembly without blocking DNS calls
             val routes = SplitTunnelRules.buildRoutes(
                 warpAiEnabled = warpAi,
-                warpOtherEnabled = warpOther,
-                dynamicResolvedIps = dynamicRoutes
+                warpOtherEnabled = warpOther
             )
 
             // Validate and build official WireGuard Config object (IPv4-only)
@@ -124,14 +116,12 @@ class AliGuardVpnService : VpnService() {
                 routes = routes
             )
 
-            // Close previous TUN fd before establishing new split-tunnel routes
             try {
                 tunInterface?.close()
             } catch (_: Exception) {
             }
             tunInterface = null
 
-            // Configure Android VpnService.Builder strictly for IPv4 Split Tunneling
             val builder = Builder()
                 .setSession("Ali-Guard WARP IPv4")
                 .setMtu(1280)
@@ -140,7 +130,6 @@ class AliGuardVpnService : VpnService() {
                 .addDnsServer("1.0.0.1")
                 .allowFamily(OsConstants.AF_INET) // Strictly IPv4-only; IPv6 disabled
 
-            // Prevent routing loop for our own control-plane sockets
             try {
                 builder.addDisallowedApplication(packageName)
             } catch (_: Exception) {
@@ -164,11 +153,10 @@ class AliGuardVpnService : VpnService() {
             }
             tunInterface = establishedFd
 
-            // Open protected IPv4 UDP socket to Cloudflare WARP Anycast endpoint
             val socket = try {
                 DatagramSocket().apply {
                     protect(this)
-                    soTimeout = 3000
+                    soTimeout = 4000
                 }
             } catch (_: Exception) {
                 null
@@ -176,7 +164,6 @@ class AliGuardVpnService : VpnService() {
             udpSocket?.close()
             udpSocket = socket
 
-            // Perform initial WireGuard Handshake Initiation with Cloudflare reserved bytes [b0, b1, b2]
             var handshakeSent = false
             if (socket != null) {
                 handshakeSent = sendWireGuardHandshakeInitiation(
@@ -204,7 +191,6 @@ class AliGuardVpnService : VpnService() {
                 detail = "$modeLabel • $appliedRoutesCount IPv4 подсетей (Пиров: $peerCount)"
             )
 
-            // Start keepalive & UDP receiver loop
             keepaliveJob = serviceScope.launch {
                 val recvBuf = ByteArray(1500)
                 while (isActive && socket != null && !socket.isClosed) {
@@ -220,7 +206,6 @@ class AliGuardVpnService : VpnService() {
                             )
                         }
                     } catch (_: Exception) {
-                        // Socket timeout: send periodic WireGuard keepalive / handshake with Reserved bytes
                         if (isActive && !socket.isClosed) {
                             sendWireGuardHandshakeInitiation(
                                 socket = socket,
@@ -229,12 +214,11 @@ class AliGuardVpnService : VpnService() {
                                 reservedBytes = reservedBytes
                             )
                         }
-                        delay(15_000L)
+                        delay(20_000L)
                     }
                 }
             }
 
-            // If TUN fd was established by Android OS, inspect IPv4 packets matching SplitTunnelRules
             if (establishedFd != null) {
                 val inputStream = FileInputStream(establishedFd.fileDescriptor)
                 val packetBuffer = ByteArray(32767)
@@ -246,7 +230,6 @@ class AliGuardVpnService : VpnService() {
                     }
                     if (length > 20) {
                         val version = (packetBuffer[0].toInt() ushr 4) and 0x0F
-                        // Process strictly IPv4 packets (version == 4)
                         if (version == 4) {
                             val dstIpInt = ((packetBuffer[16].toInt() and 0xFF) shl 24) or
                                 ((packetBuffer[17].toInt() and 0xFF) shl 16) or
@@ -265,7 +248,7 @@ class AliGuardVpnService : VpnService() {
                     } else if (length < 0) {
                         break
                     } else {
-                        delay(10L)
+                        delay(20L)
                     }
                 }
             } else if (handshakeSent) {
@@ -274,10 +257,6 @@ class AliGuardVpnService : VpnService() {
         }
     }
 
-    /**
-     * Builds and validates an official `com.wireguard.config.Config` instance
-     * containing strictly IPv4 addresses, DNS, Endpoint, and AllowedIPs.
-     */
     private fun buildValidatedWireGuardConfig(
         privateKey: String,
         peerPublicKey: String,
@@ -314,10 +293,6 @@ class AliGuardVpnService : VpnService() {
         }
     }
 
-    /**
-     * Sends a 148-byte WireGuard Type-1 Handshake Initiation packet with Cloudflare's
-     * 3 reserved bytes (`client_id`) placed at bytes [1, 2, 3] over IPv4 UDP.
-     */
     private fun sendWireGuardHandshakeInitiation(
         socket: DatagramSocket,
         endpointHost: String,
@@ -330,14 +305,11 @@ class AliGuardVpnService : VpnService() {
 
             val packetBytes = ByteArray(148)
             SecureRandom().nextBytes(packetBytes)
-            // Byte 0: Message Type = 1 (Handshake Initiation)
             packetBytes[0] = 1
-            // Bytes 1..3: Cloudflare WARP Reserved bytes decoded from client_id
             packetBytes[1] = (reservedBytes.getOrElse(0) { 0 } and 0xFF).toByte()
             packetBytes[2] = (reservedBytes.getOrElse(1) { 0 } and 0xFF).toByte()
             packetBytes[3] = (reservedBytes.getOrElse(2) { 0 } and 0xFF).toByte()
 
-            // Sender index (little-endian uint32 at offset 4)
             val senderIdx = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(0x414C4947).array()
             System.arraycopy(senderIdx, 0, packetBytes, 4, 4)
 
