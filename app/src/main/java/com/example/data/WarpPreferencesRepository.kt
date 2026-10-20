@@ -6,8 +6,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.warp.AmneziaObfuscationParams
 import com.example.warp.WarpCrypto
 import com.example.warp.WarpProfile
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +43,17 @@ class WarpPreferencesRepository(private val context: Context) {
         val ENDPOINT_HOST_V4 = stringPreferencesKey("warp_endpoint_host_v4")
         val ENDPOINT_PORT = intPreferencesKey("warp_endpoint_port")
         val CREATED_AT = stringPreferencesKey("warp_created_at")
+
+        // AmneziaWG Obfuscation Parameters (Jc, Jmin, Jmax, S1, S2, H1, H2, H3, H4)
+        val AWG_JC = intPreferencesKey("awg_jc")
+        val AWG_JMIN = intPreferencesKey("awg_jmin")
+        val AWG_JMAX = intPreferencesKey("awg_jmax")
+        val AWG_S1 = intPreferencesKey("awg_s1")
+        val AWG_S2 = intPreferencesKey("awg_s2")
+        val AWG_H1 = longPreferencesKey("awg_h1")
+        val AWG_H2 = longPreferencesKey("awg_h2")
+        val AWG_H3 = longPreferencesKey("awg_h3")
+        val AWG_H4 = longPreferencesKey("awg_h4")
     }
 
     val stateFlow: Flow<StoredAppState> = context.dataStore.data.map { prefs ->
@@ -49,6 +62,17 @@ class WarpPreferencesRepository(private val context: Context) {
         val peerPubKey = prefs[Keys.PEER_PUBLIC_KEY]
         val profile = if (!privKey.isNullOrBlank() && !pubKey.isNullOrBlank() && !peerPubKey.isNullOrBlank()) {
             val clientId = prefs[Keys.CLIENT_ID_B64].orEmpty()
+            val obfuscation = AmneziaObfuscationParams(
+                jc = prefs[Keys.AWG_JC] ?: 5,
+                jmin = prefs[Keys.AWG_JMIN] ?: 40,
+                jmax = prefs[Keys.AWG_JMAX] ?: 70,
+                s1 = prefs[Keys.AWG_S1] ?: 0,
+                s2 = prefs[Keys.AWG_S2] ?: 0,
+                h1 = prefs[Keys.AWG_H1] ?: 1L,
+                h2 = prefs[Keys.AWG_H2] ?: 2L,
+                h3 = prefs[Keys.AWG_H3] ?: 3L,
+                h4 = prefs[Keys.AWG_H4] ?: 4L
+            )
             WarpProfile(
                 deviceId = prefs[Keys.DEVICE_ID].orEmpty(),
                 accessToken = prefs[Keys.ACCESS_TOKEN].orEmpty(),
@@ -58,9 +82,10 @@ class WarpPreferencesRepository(private val context: Context) {
                 clientIdBase64 = clientId,
                 reservedBytes = WarpCrypto.decodeReservedBytes(clientId),
                 interfaceAddressV4 = prefs[Keys.INTERFACE_V4] ?: "172.16.0.2",
-                endpointHostV4 = prefs[Keys.ENDPOINT_HOST_V4] ?: "162.159.192.1",
-                endpointPort = prefs[Keys.ENDPOINT_PORT] ?: 2408,
-                createdAtIso = prefs[Keys.CREATED_AT] ?: ""
+                endpointHostV4 = prefs[Keys.ENDPOINT_HOST_V4] ?: "188.114.97.1",
+                endpointPort = prefs[Keys.ENDPOINT_PORT] ?: 500,
+                createdAtIso = prefs[Keys.CREATED_AT] ?: "",
+                obfuscation = obfuscation
             )
         } else {
             null
@@ -87,6 +112,16 @@ class WarpPreferencesRepository(private val context: Context) {
             prefs[Keys.ENDPOINT_HOST_V4] = profile.endpointHostV4
             prefs[Keys.ENDPOINT_PORT] = profile.endpointPort
             prefs[Keys.CREATED_AT] = profile.createdAtIso
+
+            prefs[Keys.AWG_JC] = profile.obfuscation.jc
+            prefs[Keys.AWG_JMIN] = profile.obfuscation.jmin
+            prefs[Keys.AWG_JMAX] = profile.obfuscation.jmax
+            prefs[Keys.AWG_S1] = profile.obfuscation.s1
+            prefs[Keys.AWG_S2] = profile.obfuscation.s2
+            prefs[Keys.AWG_H1] = profile.obfuscation.h1
+            prefs[Keys.AWG_H2] = profile.obfuscation.h2
+            prefs[Keys.AWG_H3] = profile.obfuscation.h3
+            prefs[Keys.AWG_H4] = profile.obfuscation.h4
         }
     }
 

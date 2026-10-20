@@ -42,6 +42,7 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 cloudy = "0.2.7"
 wireguardTunnel = "1.0.20211029"
+amneziawgAndroid = "1.2.2"
 bouncycastle = "1.78.1"
 desugarJdkLibs = "2.1.4"
 
@@ -100,6 +101,7 @@ androidx-credentials-play-services = { group = "androidx.credentials", name = "c
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 skydoves-cloudy = { group = "com.github.skydoves", name = "cloudy", version.ref = "cloudy" }
 wireguard-tunnel = { group = "com.wireguard.android", name = "tunnel", version.ref = "wireguardTunnel" }
+amneziawg-android = { group = "com.zaneschepke", name = "amneziawg-android", version.ref = "amneziawgAndroid" }
 bouncycastle-bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 

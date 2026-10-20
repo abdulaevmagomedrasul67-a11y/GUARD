@@ -47,6 +47,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
             tools:node="merge" />
+
+        <service
+            android:name="org.amnezia.awg.backend.GoBackend$VpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:node="merge" />
     </application>
 
 </manifest>

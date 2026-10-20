@@ -26,28 +26,39 @@ android {
   // and updating Android apps in AI Studio.
   signingConfigs {
     create("release") {
-      // Ключи удалены для успешной сборки на CI
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      storeFile = file(keystorePath)
+      storePassword = System.getenv("STORE_PASSWORD")
+      keyAlias = "upload"
+      keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      // Ключи удалены для успешной сборки на CI
+      storeFile = file("${rootDir}/debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
   }
 
-buildTypes {
+  buildTypes {
     release {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      // Строка удаления подписи релизной сборки
+      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
+      // AI Studio.
+      signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Строка удаления подписи отладочной сборки
+      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
+      // AI Studio.
+      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
     isCoreLibraryDesugaringEnabled = true
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
   }
   buildFeatures {
     compose = true
@@ -124,6 +135,7 @@ dependencies {
   implementation(libs.retrofit)
   coreLibraryDesugaring(libs.desugar.jdk.libs)
   implementation(libs.skydoves.cloudy)
+  implementation(libs.amneziawg.android)
   implementation(libs.wireguard.tunnel)
   implementation(libs.bouncycastle.bcprov)
   testImplementation(libs.androidx.compose.ui.test.junit4)

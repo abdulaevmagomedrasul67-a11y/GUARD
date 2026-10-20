@@ -47,7 +47,7 @@ data class AliGuardUiState(
         countryCode = "DE",
         region = "Hesse",
         city = "Frankfurt am Main",
-        isp = "Cloudflare WARP",
+        isp = "Cloudflare AmneziaWG",
         latitude = 50.1109,
         longitude = 8.6821,
         isGoogleAiUnlocked = true,
@@ -63,7 +63,7 @@ data class AliGuardUiState(
         get() = profile?.toWireGuardConf(
             warpAiEnabled = warpAiEnabled,
             warpOtherEnabled = warpOtherEnabled
-        ) ?: "# Конфигурация ещё не создана.\n# Нажмите «Сгенерировать WARP .conf» на главном экране."
+        ) ?: "# Конфигурация AmneziaWG ещё не создана.\n# Нажмите «Сгенерировать WARP .conf» на главном экране."
 }
 
 class AliGuardViewModel(application: Application) : AndroidViewModel(application) {
@@ -83,7 +83,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             countryCode = "DE",
             region = "Hesse",
             city = "Frankfurt am Main",
-            isp = "Cloudflare WARP",
+            isp = "Cloudflare AmneziaWG",
             latitude = 50.1109,
             longitude = 8.6821,
             isGoogleAiUnlocked = true,
@@ -120,7 +120,6 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
 
     init {
         viewModelScope.launch {
-            // Ensure a valid Curve25519 WARP profile is immediately ready on first launch even in Russia
             val current = repository.stateFlow.first()
             if (current.profile == null) {
                 val initialProfile = CloudflareWarpClient.buildLocalRussiaBypassProfile(
@@ -150,8 +149,8 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Generates a fresh Curve25519 WireGuard keypair locally and registers with Cloudflare WARP
-     * (with automatic Russia anti-DPI bypass if api.cloudflareclient.com is blocked by ISP).
+     * Generates a fresh Curve25519 AmneziaWG profile (with Jc, Jmin, Jmax, S1, S2, H1..H4 obfuscation)
+     * and validates it via `AmneziaWgValidator`.
      */
     fun generateNewWarpConfig(showSheetAfter: Boolean = true) {
         if (_localUiState.value.isGeneratingConfig) return
@@ -159,7 +158,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             _localUiState.update {
                 it.copy(
                     isGeneratingConfig = true,
-                    bannerMessage = "Генерация ключей Curve25519 и создание WARP .conf…"
+                    bannerMessage = "Генерация AmneziaWG конфига (Jc/Jmin/Jmax/H1-H4)…"
                 )
             }
 
@@ -174,11 +173,15 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
 
             repository.saveProfile(newProfile)
             val currentStored = repository.stateFlow.first()
+            val obf = newProfile.obfuscation
+            val statusNotice = newProfile.warningMessage
+                ?: "Готово: AmneziaWG .conf создан (Jc=${obf.jc}, Jmin=${obf.jmin}, Jmax=${obf.jmax}, ${newProfile.endpointString})"
+
             _localUiState.update {
                 it.copy(
                     isGeneratingConfig = false,
                     showConfigDialog = showSheetAfter,
-                    bannerMessage = "Готово: WARP .conf создан (${newProfile.endpointString})"
+                    bannerMessage = statusNotice
                 )
             }
             if (currentStored.warpAiEnabled || currentStored.warpOtherEnabled) {
@@ -203,7 +206,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             if (!targetWarpAi && !targetWarpOther) {
                 stopVpnService(getApplication())
                 _localUiState.update {
-                    it.copy(bannerMessage = "VPN-туннель отключён")
+                    it.copy(bannerMessage = "AmneziaWG туннель отключён")
                 }
                 return@launch
             }
@@ -250,7 +253,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
         val geo = geoResult.getOrNull()
         if (geo != null) {
             if (!geo.isGoogleAiUnlocked) {
-                VpnStateManager.setRotatingIp(true, "Обход блокировки РФ — смена IP для Google AI…")
+                VpnStateManager.setRotatingIp(true, "Обход DPI РФ — смена узла AmneziaWG для Google AI…")
                 endpointRotationStep++
                 val rotatedProfile = CloudflareWarpClient.rotateEndpoint(currentProfile, step = 1)
                 repository.saveProfile(rotatedProfile)
@@ -269,10 +272,10 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                             ip = rotatedProfile.endpointHostV4,
                             country = "Германия",
                             countryCode = "DE",
-                            city = "Frankfurt (Clean WARP POP)",
+                            city = "Frankfurt (AmneziaWG POP)",
                             isGoogleAiUnlocked = true
                         ),
-                        bannerMessage = "WARP AI: активен чистый европейский узел (${rotatedProfile.endpointString})"
+                        bannerMessage = "WARP AI: активен обфусцированный узел (${rotatedProfile.endpointString})"
                     )
                 }
             } else {
@@ -285,11 +288,11 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshWarpIp() {
         viewModelScope.launch {
-            VpnStateManager.setRotatingIp(true, "Смена узла Cloudflare WARP…")
+            VpnStateManager.setRotatingIp(true, "Ротация узла и шума AmneziaWG…")
             _localUiState.update {
                 it.copy(
                     isCheckingGeoIp = true,
-                    bannerMessage = "Обновление IP и переключение на новый узел WARP…"
+                    bannerMessage = "Смена IP и перегенерация параметров обфускации Jc/Jmin/Jmax…"
                 )
             }
 
@@ -329,9 +332,9 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 ip = rotatedHost,
                 country = selectedPop.first,
                 countryCode = selectedPop.second,
-                region = "Cloudflare Anycast",
+                region = "Cloudflare AmneziaWG",
                 city = selectedPop.third,
-                isp = "Cloudflare WARP",
+                isp = "Cloudflare AmneziaWG",
                 latitude = 50.1109,
                 longitude = 8.6821,
                 isGoogleAiUnlocked = true,
@@ -343,7 +346,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     isCheckingGeoIp = false,
                     geoIpInfo = resolvedGeo,
-                    bannerMessage = "IP обновлён: ${resolvedGeo.country} (${updatedProfile.endpointString})"
+                    bannerMessage = "IP обновлён: ${resolvedGeo.country} (${updatedProfile.endpointString}, Jc=${updatedProfile.obfuscation.jc})"
                 )
             }
         }
@@ -398,6 +401,16 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
             putExtra(AliGuardVpnService.EXTRA_ENDPOINT_HOST, profile.endpointHostV4)
             putExtra(AliGuardVpnService.EXTRA_ENDPOINT_PORT, profile.endpointPort)
             putExtra(AliGuardVpnService.EXTRA_RESERVED_BYTES, profile.reservedBytes.toIntArray())
+
+            putExtra(AliGuardVpnService.EXTRA_AWG_JC, profile.obfuscation.jc)
+            putExtra(AliGuardVpnService.EXTRA_AWG_JMIN, profile.obfuscation.jmin)
+            putExtra(AliGuardVpnService.EXTRA_AWG_JMAX, profile.obfuscation.jmax)
+            putExtra(AliGuardVpnService.EXTRA_AWG_S1, profile.obfuscation.s1)
+            putExtra(AliGuardVpnService.EXTRA_AWG_S2, profile.obfuscation.s2)
+            putExtra(AliGuardVpnService.EXTRA_AWG_H1, profile.obfuscation.h1)
+            putExtra(AliGuardVpnService.EXTRA_AWG_H2, profile.obfuscation.h2)
+            putExtra(AliGuardVpnService.EXTRA_AWG_H3, profile.obfuscation.h3)
+            putExtra(AliGuardVpnService.EXTRA_AWG_H4, profile.obfuscation.h4)
         }
         try {
             ContextCompat.startForegroundService(context, intent)
@@ -410,7 +423,7 @@ class AliGuardViewModel(application: Application) : AndroidViewModel(application
                 endpoint = profile.endpointString,
                 assignedIpV4 = profile.interfaceAddressV4,
                 reservedBytes = profile.reservedBytes,
-                detail = "Активно • ${routes.size} IPv4 подсетей"
+                detail = "AmneziaWG • Jc=${profile.obfuscation.jc} • ${routes.size} IPv4 подсетей"
             )
         }
     }

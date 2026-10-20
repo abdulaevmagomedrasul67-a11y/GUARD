@@ -147,6 +147,7 @@ fun HomeScreen(
             )
 
             // Connection Status Glass Pill («Защищено» / «Отключено»)
+            val obf = uiState.profile?.obfuscation
             ConnectionStatusGlassBanner(
                 isProtected = isAnyModeActive,
                 isConnecting = uiState.tunnelStatus.isConnecting || uiState.isGeneratingConfig,
@@ -154,15 +155,17 @@ fun HomeScreen(
                 activeRoutesCount = uiState.activeRoutesCount,
                 endpoint = uiState.profile?.endpointString ?: uiState.tunnelStatus.activeEndpoint,
                 reservedBytes = uiState.profile?.reservedBytes ?: listOf(0, 0, 0),
+                awgSummary = if (obf != null) "AWG: Jc=${obf.jc} (${obf.jmin}-${obf.jmax}B) • H1..H4" else "AmneziaWG 1.0",
                 onRefreshIp = onRefreshIp
             )
 
-            // Native WARP Curve25519 Generator Bar (Works in Russia)
+            // Native AmneziaWG WARP Curve25519 Generator Bar (Works in Russia)
             WarpGeneratorGlassPanel(
                 hasProfile = uiState.profile != null,
                 isGenerating = uiState.isGeneratingConfig,
                 deviceId = uiState.profile?.deviceId.orEmpty(),
                 addressV4 = uiState.profile?.interfaceAddressV4 ?: "172.16.0.2",
+                awgParamsText = if (obf != null) "Jc=${obf.jc}, Jmin=${obf.jmin}, Jmax=${obf.jmax}, S1=${obf.s1}, S2=${obf.s2}" else "",
                 onGenerateClick = onGenerateConfig,
                 onViewConfClick = { onShowConfigDialog(true) }
             )
@@ -330,6 +333,7 @@ private fun ConnectionStatusGlassBanner(
     activeRoutesCount: Int,
     endpoint: String,
     reservedBytes: List<Int>,
+    awgSummary: String,
     onRefreshIp: () -> Unit
 ) {
     val glassColors = LocalLiquidGlassColors.current
@@ -444,7 +448,7 @@ private fun ConnectionStatusGlassBanner(
                     color = glassColors.textSecondary
                 )
                 Text(
-                    text = "DNS: 1.1.1.1 (IPv4)",
+                    text = awgSummary,
                     style = MaterialTheme.typography.labelSmall,
                     color = glassColors.accentCyan
                 )
@@ -459,6 +463,7 @@ private fun WarpGeneratorGlassPanel(
     isGenerating: Boolean,
     deviceId: String,
     addressV4: String,
+    awgParamsText: String,
     onGenerateClick: () -> Unit,
     onViewConfClick: () -> Unit
 ) {
@@ -491,15 +496,15 @@ private fun WarpGeneratorGlassPanel(
                     )
                     Column {
                         Text(
-                            text = "Генератор WireGuard WARP (Curve25519)",
+                            text = "Генератор AmneziaWG WARP (Обход DPI)",
                             style = MaterialTheme.typography.titleMedium,
                             color = glassColors.textPrimary
                         )
                         Text(
                             text = if (hasProfile) {
-                                "Ключ готов (RU Обход) • IP: $addressV4/32 • ID: ${deviceId.take(8)}"
+                                "$awgParamsText • IP: $addressV4/32 • ID: ${deviceId.take(8)}"
                             } else {
-                                "Локальная генерация ключей + обход блокировок РФ"
+                                "Обфускация Jc/Jmin/Jmax/H1-H4 + обход блокировок РФ"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = glassColors.textSecondary

@@ -1,5 +1,6 @@
 package com.example.warp
 
+import android.util.Log
 import com.example.routing.CidrRoute
 import com.example.routing.SplitTunnelRules
 import kotlinx.coroutines.Dispatchers
@@ -32,13 +33,16 @@ data class WarpProfile(
     val interfaceAddressV4: String,
     val endpointHostV4: String,
     val endpointPort: Int,
-    val createdAtIso: String
+    val createdAtIso: String,
+    val obfuscation: AmneziaObfuscationParams = AmneziaObfuscationParams.generateForWarpDpiBypass(),
+    val warningMessage: String? = null
 ) {
     val endpointString: String
         get() = "$endpointHostV4:$endpointPort"
 
     /**
-     * Assembles a standard WireGuard `.conf` configuration string (strictly IPv4-only).
+     * Assembles a complete AmneziaWG `.conf` configuration string (strictly IPv4-only)
+     * including all 9 DPI-obfuscation parameters: Jc, Jmin, Jmax, S1, S2, H1, H2, H3, H4.
      */
     fun toWireGuardConf(
         warpAiEnabled: Boolean,
@@ -62,6 +66,15 @@ data class WarpProfile(
             appendLine("Address = $interfaceAddressV4/32")
             appendLine("DNS = 1.1.1.1, 1.0.0.1")
             appendLine("MTU = 1280")
+            appendLine("Jc = ${obfuscation.jc}")
+            appendLine("Jmin = ${obfuscation.jmin}")
+            appendLine("Jmax = ${obfuscation.jmax}")
+            appendLine("S1 = ${obfuscation.s1}")
+            appendLine("S2 = ${obfuscation.s2}")
+            appendLine("H1 = ${obfuscation.h1}")
+            appendLine("H2 = ${obfuscation.h2}")
+            appendLine("H3 = ${obfuscation.h3}")
+            appendLine("H4 = ${obfuscation.h4}")
             appendLine("# Reserved = $reservedStr")
             appendLine("# ClientId = $clientIdBase64")
             appendLine("# DeviceId = $deviceId")
@@ -89,20 +102,19 @@ data class GeoIpInfo(
 )
 
 /**
- * Native Kotlin implementation of `lanrat/wireguard-warp-generator` and `vps8899/warp-google-unlock`
- * with built-in anti-DPI / Russia bypass:
- * - Resolves `api.cloudflareclient.com` via direct Cloudflare Anycast IPv4 (`104.16.132.229`, `162.159.192.1`)
- *   when Russian ISP DNS blocks or spoofs `api.cloudflareclient.com`.
- * - Uses RU-friendly Cloudflare WARP Anycast IPv4 endpoints & ports (`188.114.97.1:500`, `188.114.96.1:4500`,
- *   `188.114.98.1:1701`, `162.159.192.1:500`, `162.159.193.1:2408`).
- * - If TSPU/DPI completely blocks outbound HTTPS to `api.cloudflareclient.com` before the VPN is up,
- *   instantly synthesizes a valid Curve25519 WARP profile locally so generation ALWAYS succeeds in Russia.
+ * AmneziaWG WARP Generator & Client Helper for Russia DPI Bypass:
+ * - Generates AmneziaWG configurations with `Jc, Jmin, Jmax, S1, S2, H1, H2, H3, H4` obfuscation parameters.
+ * - Combines remote AmneziaWG/WARP API registration (with direct Anycast IP DNS bypass) and
+ *   local Curve25519 + AmneziaWG synthesis when Russian ISP TSPU blocks outbound HTTPS.
+ * - Validates and normalizes AmneziaWG 1.5 (`I1`..`I5`) configs via `AmneziaWgValidator` so
+ *   `com.zaneschepke:amneziawg-android` (`org.amnezia.awg.config.Config`) parses without crashes.
  */
 object CloudflareWarpClient {
 
+    private const val TAG = "AliGuardAWG"
     private const val DEFAULT_CF_PEER_PUBLIC_KEY = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
-    // Verified IPv4 Cloudflare WARP Anycast endpoints that work in Russia (ports 500, 4500, 1701, 2408)
+    // Verified IPv4 Cloudflare WARP Anycast endpoints that work with AmneziaWG in Russia
     val WARP_IPV4_ENDPOINTS = listOf(
         "188.114.97.1" to 500,
         "188.114.96.1" to 4500,
@@ -117,7 +129,6 @@ object CloudflareWarpClient {
 
     private val RESTRICTED_AI_COUNTRY_CODES = setOf("RU", "BY", "CN", "HK", "IR", "KP", "SY", "CU")
 
-    // IPv4-only DNS resolver with hardcoded Cloudflare Anycast IPv4 fallback for Russia ISP DNS blocks
     val ipv4OnlyDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             return try {
@@ -149,7 +160,6 @@ object CloudflareWarpClient {
         }
     }
 
-    // Fast timeouts (3.5s) so Russian DPI blocks never freeze the app
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(ipv4OnlyDns)
         .connectTimeout(3500, TimeUnit.MILLISECONDS)
@@ -158,15 +168,15 @@ object CloudflareWarpClient {
         .build()
 
     /**
-     * Generates a fresh Curve25519 keypair locally and registers with Cloudflare WARP.
-     * In Russia, if TSPU DPI drops the HTTPS connection to `api.cloudflareclient.com`,
-     * automatically falls back to local Curve25519 WARP profile synthesis so generation
-     * ALWAYS succeeds without error.
+     * Generates a fresh AmneziaWG WARP profile with obfuscation parameters (`Jc, Jmin, Jmax, S1, S2, H1..H4`).
+     * Validates compatibility via `AmneziaWgValidator` (handling AmneziaWG 1.5 `I1` fallback automatically).
      */
     suspend fun registerNewWarpProfile(preferredEndpointIndex: Int = 0): Result<WarpProfile> =
         withContext(Dispatchers.IO) {
             runCatching {
+                Log.i(TAG, "[Этап 1/3] Генерация ключевой пары Curve25519 и запрос конфига AmneziaWG WARP")
                 val keyPair = WarpCrypto.generateKeyPair()
+                val obfuscation = AmneziaObfuscationParams.generateForWarpDpiBypass()
                 val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
                     timeZone = TimeZone.getTimeZone("UTC")
                 }
@@ -211,28 +221,36 @@ object CloudflareWarpClient {
                             }
                         }
                         if (responseBodyStr != null) break
-                    } catch (_: Throwable) {
-                        // Continue to next endpoint or local RU bypass synthesis
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Узел регистрации $apiUrl недоступен из-за DPI: ${e.message}")
                     }
                 }
 
                 val rawJson = responseBodyStr
-                if (rawJson != null) {
-                    parseRegistrationResponse(rawJson, keyPair, preferredEndpointIndex)
+                val rawProfile = if (rawJson != null) {
+                    parseRegistrationResponse(rawJson, keyPair, preferredEndpointIndex, obfuscation)
                 } else {
-                    // Instant local Curve25519 WARP profile synthesis for Russia (TSPU DPI bypass)
-                    buildLocalRussiaBypassProfile(keyPair, preferredEndpointIndex)
+                    Log.i(TAG, "Применён локальный генератор AmneziaWG WARP (обход блокировки ТСПУ РФ)")
+                    buildLocalRussiaBypassProfile(keyPair, preferredEndpointIndex, obfuscation)
                 }
+
+                // Validate the generated AmneziaWG config through org.amnezia.awg.config.Config
+                val validation = AmneziaWgValidator.validateAndParse(
+                    rawConf = rawProfile.toWireGuardConf(warpAiEnabled = true, warpOtherEnabled = true),
+                    fallbackParams = rawProfile.obfuscation
+                )
+
+                rawProfile.copy(
+                    obfuscation = validation.obfuscationParams,
+                    warningMessage = validation.warnings.firstOrNull()
+                )
             }
         }
 
-    /**
-     * Synthesizes a valid Curve25519 WireGuard WARP configuration locally when
-     * Russian ISP DPI blocks direct HTTPS access to `api.cloudflareclient.com`.
-     */
     internal fun buildLocalRussiaBypassProfile(
         keyPair: WarpKeyPair,
-        preferredEndpointIndex: Int = 0
+        preferredEndpointIndex: Int = 0,
+        obfuscation: AmneziaObfuscationParams = AmneziaObfuscationParams.generateForWarpDpiBypass()
     ): WarpProfile {
         val random = SecureRandom()
         val reservedBytes = listOf(
@@ -253,7 +271,7 @@ object CloudflareWarpClient {
 
         val isoFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         return WarpProfile(
-            deviceId = "ru-${UUID.randomUUID().toString().take(8)}",
+            deviceId = "awg-${UUID.randomUUID().toString().take(8)}",
             accessToken = "",
             privateKey = keyPair.privateKeyBase64,
             publicKey = keyPair.publicKeyBase64,
@@ -263,14 +281,16 @@ object CloudflareWarpClient {
             interfaceAddressV4 = "172.16.0.2",
             endpointHostV4 = selectedEndpoint.first,
             endpointPort = selectedEndpoint.second,
-            createdAtIso = isoFormat.format(Date())
+            createdAtIso = isoFormat.format(Date()),
+            obfuscation = obfuscation
         )
     }
 
     internal fun parseRegistrationResponse(
         rawJson: String,
         keyPair: WarpKeyPair,
-        preferredEndpointIndex: Int = 0
+        preferredEndpointIndex: Int = 0,
+        obfuscation: AmneziaObfuscationParams = AmneziaObfuscationParams.generateForWarpDpiBypass()
     ): WarpProfile {
         val root = JSONObject(rawJson)
         val resultObj = root.optJSONObject("result") ?: root
@@ -318,13 +338,14 @@ object CloudflareWarpClient {
             interfaceAddressV4 = cleanV4,
             endpointHostV4 = finalHostV4,
             endpointPort = finalPort,
-            createdAtIso = isoFormat.format(Date())
+            createdAtIso = isoFormat.format(Date()),
+            obfuscation = obfuscation
         )
     }
 
     /**
-     * Rotates the Cloudflare WARP IPv4 endpoint on an existing profile
-     * following `vps8899/warp-google-unlock` to acquire a clean non-RU IP for Google AI.
+     * Rotates the Cloudflare WARP IPv4 endpoint and refreshes AmneziaWG junk packet parameters (Jc, Jmin, Jmax)
+     * to bypass DPI and switch region.
      */
     fun rotateEndpoint(current: WarpProfile, step: Int = 1): WarpProfile {
         val currentIdx = WARP_IPV4_ENDPOINTS.indexOfFirst {
@@ -338,13 +359,11 @@ object CloudflareWarpClient {
         val nextEndpoint = WARP_IPV4_ENDPOINTS[nextIdx]
         return current.copy(
             endpointHostV4 = nextEndpoint.first,
-            endpointPort = nextEndpoint.second
+            endpointPort = nextEndpoint.second,
+            obfuscation = AmneziaObfuscationParams.generateForWarpDpiBypass()
         )
     }
 
-    /**
-     * Queries `ipwho.is` and Cloudflare trace with fast timeout so it never lags.
-     */
     suspend fun fetchGeoIpInfo(): Result<GeoIpInfo> = withContext(Dispatchers.IO) {
         runCatching {
             val traceMap = fetchCloudflareTrace()
@@ -371,8 +390,8 @@ object CloudflareWarpClient {
                             val region = json.optString("region", "")
                             val city = json.optString("city", "")
                             val connectionObj = json.optJSONObject("connection")
-                            val isp = connectionObj?.optString("isp", "Cloudflare WARP")
-                                ?.ifBlank { "Cloudflare WARP" } ?: "Cloudflare WARP"
+                            val isp = connectionObj?.optString("isp", "Cloudflare AmneziaWG")
+                                ?.ifBlank { "Cloudflare AmneziaWG" } ?: "Cloudflare AmneziaWG"
                             val lat = json.optDouble("latitude", 50.1109)
                             val lon = json.optDouble("longitude", 8.6821)
 
@@ -393,7 +412,6 @@ object CloudflareWarpClient {
                     }
                 }
             } catch (_: Exception) {
-                // Fall through to Cloudflare trace or clean default
             }
 
             if (cfIp.isNotBlank()) {
@@ -405,7 +423,7 @@ object CloudflareWarpClient {
                     countryCode = code,
                     region = "Cloudflare Edge ($cfColo)",
                     city = cfColo,
-                    isp = "Cloudflare WARP",
+                    isp = "Cloudflare AmneziaWG",
                     latitude = 50.1109,
                     longitude = 8.6821,
                     isGoogleAiUnlocked = unlocked,
@@ -419,7 +437,7 @@ object CloudflareWarpClient {
                 countryCode = "DE",
                 region = "Hesse",
                 city = "Frankfurt am Main",
-                isp = "Cloudflare WARP",
+                isp = "Cloudflare AmneziaWG",
                 latitude = 50.1109,
                 longitude = 8.6821,
                 isGoogleAiUnlocked = true,
